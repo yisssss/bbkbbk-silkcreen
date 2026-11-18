@@ -15,6 +15,7 @@ interface Props {
 }
 
 export function LayerCard({ layer, index, count, separation, band }: Props) {
+  const palette = useDocument((s) => s.doc.palette);
   const updateLayer = useDocument((s) => s.updateLayer);
   const updateTone = useDocument((s) => s.updateTone);
   const resetTone = useDocument((s) => s.resetTone);
@@ -125,7 +126,12 @@ export function LayerCard({ layer, index, count, separation, band }: Props) {
 
       {selected && (
         <div className="layer-card-body">
-          <ColorField label="잉크 색상" value={layer.color} onChange={(color) => updateLayer(layer.id, { color })} />
+          <ColorField
+            label="잉크 색상"
+            value={layer.color}
+            palette={palette}
+            onChange={(color) => updateLayer(layer.id, { color })}
+          />
 
           <div className="subhead">
             <span>단색 구간</span>

@@ -1,5 +1,6 @@
 import { writePsdUint8Array, type Layer, type Psd } from 'ag-psd/dist-es/index.js';
 import { strToU8, zipSync } from 'fflate';
+import { activeFrame } from '../core/defaults';
 import { buildManifest, layerFileName, psdFileName, psdLayerName, zipFileName } from '../core/exportManifest';
 import { injectJfifDensity } from '../core/jpeg';
 import type { ProjectDoc } from '../core/types';
@@ -24,7 +25,7 @@ export function saveBytes(bytes: Uint8Array, name: string, type: string) {
 
 function currentDoc(): ProjectDoc {
   const doc = useDocument.getState().doc;
-  if (!doc.source) throw new Error('내보낼 이미지가 없습니다.');
+  if (!activeFrame(doc).source) throw new Error('내보낼 이미지가 없습니다.');
   return doc;
 }
 
@@ -81,7 +82,7 @@ export async function downloadPsd() {
       },
     },
   };
-  saveBytes(writePsdUint8Array(psd), psdFileName(doc.source?.fileName), 'image/vnd.adobe.photoshop');
+  saveBytes(writePsdUint8Array(psd), psdFileName(activeFrame(doc).source?.fileName), 'image/vnd.adobe.photoshop');
 }
 
 async function pngToCanvas(png: Uint8Array, width: number, height: number): Promise<HTMLCanvasElement> {
@@ -128,5 +129,5 @@ export async function downloadZip() {
     const layer = doc.layers[plate.index];
     entries[layerFileName(plate.index, layer.name, layer.color)] = plate.bytes;
   }
-  saveBytes(zipSync(entries, { level: 0 }), zipFileName(doc.source?.fileName), 'application/zip');
+  saveBytes(zipSync(entries, { level: 0 }), zipFileName(activeFrame(doc).source?.fileName), 'application/zip');
 }

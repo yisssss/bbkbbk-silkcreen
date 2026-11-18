@@ -1,4 +1,4 @@
-import { ARTBOARD_PRESETS, DEFAULT_ADJUST } from '../core/defaults';
+import { activeFrame, ARTBOARD_PRESETS, DEFAULT_ADJUST } from '../core/defaults';
 import { effectiveDpi, mmToUnit, PRINT_DPI, printPixelSize } from '../core/units';
 import { useDocument } from '../state/documentStore';
 import { useUi } from '../state/uiStore';
@@ -18,7 +18,10 @@ export function LeftPanel() {
   const requestFit = useUi((s) => s.requestFit);
   const requestCover = useUi((s) => s.requestCover);
 
-  const { artboard, placement, crop, source, adjust } = doc;
+  const image = activeFrame(doc);
+  const { artboard } = doc;
+  const { placement, crop, source, adjust, lockRatio } = image;
+  const palette = doc.palette;
   const printPx = printPixelSize(artboard.widthMm, artboard.heightMm);
   const dpi = crop ? Math.min(effectiveDpi(crop.width, placement.widthMm), effectiveDpi(crop.height, placement.heightMm)) : 0;
   const fmtLen = (mm: number) => `${mmToUnit(mm, unit).toFixed(unit === 'cm' ? 1 : 0)}`;
@@ -42,6 +45,7 @@ export function LeftPanel() {
               전체 초기화
             </button>
           </div>
+          <p className="note">「{image.name}」 탭만 바뀝니다. 판 크기와 인쇄 색은 모든 탭이 함께 씁니다.</p>
           <SliderField
             label="밝기"
             value={adjust.brightness}
@@ -119,7 +123,7 @@ export function LeftPanel() {
             <LengthField label="H" valueMm={placement.heightMm} unit={unit} minMm={1} disabled={!source} onChange={(heightMm) => actions.setPlacement({ heightMm })} />
           </div>
           <label className="toggle-row compact">
-            <input type="checkbox" checked={doc.lockRatio} onChange={(e) => actions.setLockRatio(e.currentTarget.checked)} />
+            <input type="checkbox" checked={lockRatio} onChange={(e) => actions.setLockRatio(e.currentTarget.checked)} />
             <span>비율 유지</span>
           </label>
           <div className="btn-row">
@@ -176,8 +180,8 @@ export function LeftPanel() {
           <div className="segmented">
             {(
               [
-                ['tshirt', '티셔츠'],
                 ['paper', '엽서'],
+                ['tshirt', '티셔츠'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -195,6 +199,7 @@ export function LeftPanel() {
           <ColorField
             label={doc.preview.mockup === 'paper' ? '엽서 색' : '티셔츠 색'}
             value={doc.preview.paperColor}
+            palette={palette}
             onChange={actions.setPaperColor}
           />
         </section>

@@ -3,6 +3,7 @@ import type { ColorCount, InkLayer } from '../core/types';
 import { useDocument } from '../state/documentStore';
 import { usePreview, useUi } from '../state/uiStore';
 import { GradientMapBar } from './GradientMapBar';
+import { PaletteLibrary } from './PaletteLibrary';
 import { HalftonePanel } from './HalftonePanel';
 import { LayerCard } from './LayerCard';
 import { LayerThumb } from './LayerThumb';
@@ -120,6 +121,8 @@ export function RightPanel() {
                 ))}
               </div>
             </section>
+
+            <PaletteLibrary />
 
             <section className="panel-section">
               <h2 className="section-title">분판 방식</h2>

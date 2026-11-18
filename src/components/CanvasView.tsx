@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { activeFrame } from '../core/defaults';
 import {
   ALL_HANDLES,
   CORNER_HANDLES,
@@ -21,6 +22,7 @@ import { imageRegistry } from '../state/imageRegistry';
 import { printPreviewReady, usePreview, useUi } from '../state/uiStore';
 import type { PrintTile } from '../worker/protocol';
 import { CanvasFooter } from './CanvasFooter';
+import { ImageTabs } from './ImageTabs';
 
 const HANDLE_SIZE = 8;
 const HIT_RADIUS = 9;
@@ -111,8 +113,8 @@ export function CanvasView() {
   const photos = useRef<Partial<Record<MockupPhoto, HTMLImageElement>>>({});
   const tinted = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
   const [photosReady, setPhotosReady] = useState(0);
-  const source = useDocument((s) => s.doc.source);
-  const loadImage = useDocument((s) => s.loadImage);
+  const source = useDocument((s) => activeFrame(s.doc).source);
+  const addImages = useDocument((s) => s.addImages);
   const requestFit = useUi((s) => s.requestFit);
 
   const draw = useCallback(() => {
@@ -174,18 +176,19 @@ export function CanvasView() {
     ctx.fillStyle = 'rgba(255,255,255,.55)';
     ctx.fillText(`인쇄 영역 ${fmt(doc.artboard.widthMm)} × ${fmt(doc.artboard.heightMm)} ${ui.unit}`, ab.x, ab.y - 8);
 
-    if (!doc.source || !doc.crop) return;
-    const pr = toScreen(placementToRect(doc.placement));
+    const image = activeFrame(doc);
+    if (!image.source || !image.crop) return;
+    const pr = toScreen(placementToRect(image.placement));
 
     if (ui.tool === 'crop') {
-      const frame = cropFrameOf(doc.crop, doc.placement);
+      const frame = cropFrameOf(image.crop, image.placement);
       const full = toScreen({
         x: frame.originX,
         y: frame.originY,
-        width: doc.source.width * frame.scale,
-        height: doc.source.height * frame.scale,
+        width: image.source.width * frame.scale,
+        height: image.source.height * frame.scale,
       });
-      const entry = imageRegistry.get(doc.source.imageId);
+      const entry = imageRegistry.get(image.source.imageId);
       ctx.save();
       ctx.beginPath();
       ctx.rect(full.x, full.y, full.width, full.height);
@@ -215,7 +218,7 @@ export function CanvasView() {
       ctx.lineWidth = 1.5;
       ctx.strokeRect(pr.x, pr.y, pr.width, pr.height);
       drawHandles(ctx, pr, ALL_HANDLES);
-      drawLabel(ctx, `크롭 ${Math.round(doc.crop.width)} × ${Math.round(doc.crop.height)}px · Enter로 완료`, pr.x, pr.y - 6, ACCENT);
+      drawLabel(ctx, `크롭 ${Math.round(image.crop.width)} × ${Math.round(image.crop.height)}px · Enter로 완료`, pr.x, pr.y - 6, ACCENT);
       return;
     }
 
@@ -225,10 +228,10 @@ export function CanvasView() {
       ctx.lineWidth = 1;
       ctx.strokeRect(Math.round(pr.x) + 0.5, Math.round(pr.y) + 0.5, Math.round(pr.width), Math.round(pr.height));
       ctx.setLineDash([]);
-      drawHandles(ctx, pr, doc.lockRatio ? CORNER_HANDLES : ALL_HANDLES);
+      drawHandles(ctx, pr, image.lockRatio ? CORNER_HANDLES : ALL_HANDLES);
       drawLabel(
         ctx,
-        `${fmt(doc.placement.widthMm)} × ${fmt(doc.placement.heightMm)} ${ui.unit}`,
+        `${fmt(image.placement.widthMm)} × ${fmt(image.placement.heightMm)} ${ui.unit}`,
         pr.x,
         pr.y + pr.height + 22,
       );
@@ -353,7 +356,7 @@ export function CanvasView() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       const ui = useUi.getState();
-      const hasImage = !!useDocument.getState().doc.source;
+      const hasImage = !!activeFrame(useDocument.getState().doc).source;
       const mod = e.metaKey || e.ctrlKey;
       if (e.code === 'Space') {
         e.preventDefault();
@@ -407,14 +410,15 @@ export function CanvasView() {
     const { doc } = useDocument.getState();
     const { tool } = useUi.getState();
     if (tool === 'hand' || spaceRef.current) return { kind: 'pan' };
-    if (!doc.source || !doc.crop) return { kind: 'pan' };
-    const pr = toScreen(placementToRect(doc.placement));
+    const image = activeFrame(doc);
+    if (!image.source || !image.crop) return { kind: 'pan' };
+    const pr = toScreen(placementToRect(image.placement));
     if (tool === 'crop') {
       const h = hitHandle(pr, ALL_HANDLES, x, y);
       if (h) return { kind: 'crop-resize', handle: h };
       return inside(pr, x, y) ? { kind: 'crop-move' } : { kind: 'none' };
     }
-    const h = hitHandle(pr, doc.lockRatio ? CORNER_HANDLES : ALL_HANDLES, x, y);
+    const h = hitHandle(pr, image.lockRatio ? CORNER_HANDLES : ALL_HANDLES, x, y);
     if (h) return { kind: 'resize', handle: h };
     return inside(pr, x, y) ? { kind: 'move' } : { kind: 'pan' };
   };
@@ -429,7 +433,7 @@ export function CanvasView() {
   const onPointerDown = (e: React.PointerEvent) => {
     const { x, y } = localPoint(e);
     const ui = useUi.getState();
-    const { doc } = useDocument.getState();
+    const image = activeFrame(useDocument.getState().doc);
     const hit = e.button === 1 ? { kind: 'pan' as const } : hitTest(x, y);
     if (hit.kind === 'none') return;
     try {
@@ -441,16 +445,16 @@ export function CanvasView() {
       dragRef.current = { kind: 'pan', sx: x, sy: y, panX: ui.panX, panY: ui.panY };
       setCursor('grabbing');
     } else if (hit.kind === 'move') {
-      dragRef.current = { kind: 'move', sx: x, sy: y, start: doc.placement };
+      dragRef.current = { kind: 'move', sx: x, sy: y, start: image.placement };
     } else if (hit.kind === 'resize') {
-      dragRef.current = { kind: 'resize', sx: x, sy: y, start: placementToRect(doc.placement), handle: hit.handle! };
-    } else if (doc.crop) {
+      dragRef.current = { kind: 'resize', sx: x, sy: y, start: placementToRect(image.placement), handle: hit.handle! };
+    } else if (image.crop) {
       dragRef.current = {
         kind: hit.kind,
         sx: x,
         sy: y,
-        start: doc.crop,
-        frame: cropFrameOf(doc.crop, doc.placement),
+        start: image.crop,
+        frame: cropFrameOf(image.crop, image.placement),
         handle: hit.handle,
       };
     }
@@ -465,7 +469,7 @@ export function CanvasView() {
     }
     const ui = useUi.getState();
     const docState = useDocument.getState();
-    const { doc } = docState;
+    const image = activeFrame(docState.doc);
     let dx = (x - drag.sx) / ui.zoom;
     let dy = (y - drag.sy) / ui.zoom;
 
@@ -478,14 +482,14 @@ export function CanvasView() {
         docState.setPlacement({ xMm: drag.start.xMm + dx, yMm: drag.start.yMm + dy });
         break;
       case 'resize': {
-        const lock = doc.lockRatio !== e.shiftKey;
+        const lock = image.lockRatio !== e.shiftKey;
         docState.setPlacement(rectToPlacement(resizeRect(drag.start, drag.handle, dx, dy, lock)));
         break;
       }
       case 'crop-move':
       case 'crop-resize': {
-        if (!doc.source) break;
-        const { width: sw, height: sh } = doc.source;
+        if (!image.source) break;
+        const { width: sw, height: sh } = image.source;
         const dxPx = dx / drag.frame.scale;
         const dyPx = dy / drag.frame.scale;
         const crop =
@@ -512,6 +516,7 @@ export function CanvasView() {
         onFit={fit}
         onZoom={(f) => zoomAt(sizeRef.current.w / 2, sizeRef.current.h / 2, f)}
       />
+      <ImageTabs />
       <div
         ref={wrapRef}
         className={`canvas-wrap ${dragOver ? 'drag-over' : ''}`}
@@ -523,9 +528,9 @@ export function CanvasView() {
         onDrop={async (e) => {
           e.preventDefault();
           setDragOver(false);
-          const file = e.dataTransfer.files?.[0];
-          if (file) {
-            await loadImage(file);
+          const files = [...e.dataTransfer.files];
+          if (files.length) {
+            await addImages(files);
             requestFit();
           }
         }}
@@ -541,7 +546,7 @@ export function CanvasView() {
         />
         {!source && (
           <div className="empty-state">
-            <p className="empty-title">이미지를 여기로 드래그하거나 상단의 “이미지 열기”를 누르세요</p>
+            <p className="empty-title">이미지를 여기로 드래그하거나 상단에서 추가하세요. 여러 장을 올리면 탭마다 따로 조정할 수 있습니다.</p>
           </div>
         )}
       </div>

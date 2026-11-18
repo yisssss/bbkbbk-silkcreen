@@ -3,8 +3,10 @@ import type {
   ColorCount,
   HalftoneSettings,
   ImageAdjust,
+  ImageFrame,
   InkLayer,
   LayerTone,
+  PaletteColor,
   Placement,
   ProjectDoc,
 } from './types';
@@ -45,6 +47,22 @@ export function defaultTone(index: number, count: number): LayerTone {
 }
 
 export const DEFAULT_ADJUST: ImageAdjust = { brightness: 0, contrast: 0, gamma: 1 };
+
+/** How many pictures can sit in the tab strip. */
+export const MAX_IMAGES = 12;
+/** How many swatches the colour library keeps. */
+export const MAX_PALETTE = 24;
+
+/** Starter inks. The user can rename, recolour, or delete every one. */
+export const DEFAULT_PALETTE: { name: string; color: string }[] = [
+  { name: '검정', color: '#1C1C1C' },
+  { name: '하양', color: '#FFFFFF' },
+  { name: '빨강', color: '#E8432E' },
+  { name: '노랑', color: '#F2C230' },
+  { name: '파랑', color: '#2F5BFF' },
+  { name: '초록', color: '#1F8A4C' },
+];
+
 export const DEFAULT_WHITE_POINT = 0;
 
 export const DEFAULT_HALFTONE: HalftoneSettings = {
@@ -60,6 +78,27 @@ const newId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
+
+export function createDefaultPalette(): PaletteColor[] {
+  return DEFAULT_PALETTE.map((swatch) => ({ id: newId(), name: swatch.name, color: swatch.color }));
+}
+
+/** An empty tab. The name is replaced when a file is loaded into it. */
+export function createFrame(index: number, artboard: Artboard): ImageFrame {
+  return {
+    id: newId(),
+    name: `이미지 ${index + 1}`,
+    source: null,
+    crop: null,
+    placement: fitPlacement(artboard, 3, 4),
+    lockRatio: true,
+    adjust: { ...DEFAULT_ADJUST },
+  };
+}
+
+export function activeFrame(doc: ProjectDoc): ImageFrame {
+  return doc.images.find((img) => img.id === doc.activeImageId) ?? doc.images[0];
+}
 
 export function createLayer(index: number, count: ColorCount): InkLayer {
   return {
@@ -124,17 +163,16 @@ export function fitPlacement(artboard: Artboard, imgW: number, imgH: number, fil
 }
 
 export function createEmptyDoc(): ProjectDoc {
+  const first = createFrame(0, DEFAULT_ARTBOARD);
   return {
     version: 1,
-    source: null,
-    crop: null,
+    images: [first],
+    activeImageId: first.id,
     artboard: { ...DEFAULT_ARTBOARD },
-    placement: fitPlacement(DEFAULT_ARTBOARD, 3, 4),
-    lockRatio: true,
-    adjust: { ...DEFAULT_ADJUST },
     separation: { overprint: true, whitePoint: DEFAULT_WHITE_POINT },
     halftone: { ...DEFAULT_HALFTONE },
     layers: [createLayer(0, 1)],
-    preview: { paperColor: '#F4F1EA', mockup: 'tshirt' },
+    preview: { paperColor: '#FFFFFF', mockup: 'paper' },
+    palette: createDefaultPalette(),
   };
 }

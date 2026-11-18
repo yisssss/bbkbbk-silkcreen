@@ -21,7 +21,7 @@ export interface LayerTone {
   solidHi: number;
 }
 
-/** Global adjustment applied to the source before separation. brightness / contrast: -100..100, gamma: 0.1..3. */
+/** Adjustment applied to one image before separation. brightness / contrast: -100..100, gamma: 0.1..3. */
 export interface ImageAdjust {
   brightness: number;
   contrast: number;
@@ -100,17 +100,36 @@ export interface PreviewSettings {
   mockup: MockupKind;
 }
 
-export interface ProjectDoc {
-  version: 1;
+/** One uploaded picture and the adjustments that belong only to it. */
+export interface ImageFrame {
+  id: string;
+  /** Tab label. Usually the file name without its extension. */
+  name: string;
   source: SourceInfo | null;
   /** Crop rectangle in source pixels. */
   crop: Rect | null;
-  artboard: Artboard;
   placement: Placement;
   lockRatio: boolean;
   adjust: ImageAdjust;
+}
+
+/** A swatch the user saved and can apply to an ink or the mockup. */
+export interface PaletteColor {
+  id: string;
+  name: string;
+  color: Hex;
+}
+
+export interface ProjectDoc {
+  version: 1;
+  /** Pictures, in tab order. There is always at least one. */
+  images: ImageFrame[];
+  activeImageId: string;
+  artboard: Artboard;
   separation: SeparationSettings;
   halftone: HalftoneSettings;
   layers: InkLayer[];
   preview: PreviewSettings;
+  /** Saved colours. Empty is allowed; missing means "use the defaults" on load. */
+  palette: PaletteColor[];
 }

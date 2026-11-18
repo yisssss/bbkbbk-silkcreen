@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { activeFrame } from '../core/defaults';
 import { mmToPx, printPixelSize } from '../core/units';
 import { printJobFromDoc } from '../export/printJob';
 import { useDocument } from '../state/documentStore';
@@ -15,16 +16,17 @@ const DETAIL_DELAY_MS = 120;
 
 function buildDraftRequest(): RenderRequest {
   const { doc } = useDocument.getState();
+  const image = activeFrame(doc);
   const ui = useUi.getState();
   const longMm = Math.max(doc.artboard.widthMm, doc.artboard.heightMm);
   return {
-    imageId: doc.source?.imageId ?? null,
-    crop: doc.crop,
+    imageId: image.source?.imageId ?? null,
+    crop: image.crop,
     artboard: doc.artboard,
-    placement: doc.placement,
+    placement: image.placement,
     pxPerMm: Math.min(PREVIEW_LONG_SIDE / longMm, mmToPx(1)),
     layers: doc.layers.map((l) => ({ id: l.id, color: l.color, tone: l.tone, visible: l.visible })),
-    adjust: doc.adjust,
+    adjust: image.adjust,
     separation: doc.separation,
     view: ui.viewMode,
     soloLayerId: ui.selectedLayerId,
@@ -79,7 +81,7 @@ function buildPrintRequest(wantOverview: boolean): PrintViewRequest {
 
 const wantsPrint = () => {
   const ui = useUi.getState();
-  return ui.halftonePreview && ui.viewMode !== 'original' && !!useDocument.getState().doc.source;
+  return ui.halftonePreview && ui.viewMode !== 'original' && !!activeFrame(useDocument.getState().doc).source;
 };
 
 export function usePreviewPipeline() {

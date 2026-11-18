@@ -1,5 +1,8 @@
+import { useState } from 'react';
+import { activeFrame } from '../core/defaults';
+import { downloadPreviewImage } from '../export/previewImage';
 import { useDocument } from '../state/documentStore';
-import { usePreview, useUi, type Tool } from '../state/uiStore';
+import { useUi, type Tool } from '../state/uiStore';
 import type { ViewMode } from '../worker/protocol';
 
 /** Screen px per mm at 100%: physical size on a 96 dpi display. */
@@ -17,25 +20,6 @@ const TOOLS: { id: Tool; label: string; key: string }[] = [
   { id: 'hand', label: '손', key: 'H' },
 ];
 
-const DRAFT_BADGES: Record<ViewMode, string> = {
-  composite: '미리보기 전용 · 연속톤 근사 (망점 미적용)',
-  layer: '레이어 농도 맵 · 검정 = 잉크 100%',
-  original: '원본 이미지 · 이미지 조정 적용',
-};
-
-const PRINT_BADGES: Record<Exclude<ViewMode, 'original'>, string> = {
-  composite: '인쇄 데이터 · 300 DPI 망점 (잉크색·바탕은 미리보기용)',
-  layer: '인쇄용 이진 마스크 · 300 DPI · 검정 = 잉크',
-};
-
-type BadgeKind = 'draft' | 'pending' | 'print';
-
-function badgeFor(viewMode: ViewMode, halftone: boolean, ready: boolean): { kind: BadgeKind; text: string } {
-  if (viewMode === 'original' || !halftone) return { kind: 'draft', text: DRAFT_BADGES[viewMode] };
-  if (!ready) return { kind: 'pending', text: '망점 계산 중… (연속톤 근사 표시)' };
-  return { kind: 'print', text: PRINT_BADGES[viewMode] };
-}
-
 interface Props {
   onFit: () => void;
   onZoom: (factor: number) => void;
@@ -48,15 +32,22 @@ export function CanvasFooter({ onFit, onZoom }: Props) {
   const selectedLayerId = useUi((s) => s.selectedLayerId);
   const set = useUi((s) => s.set);
   const layers = useDocument((s) => s.doc.layers);
-  const hasImage = useDocument((s) => !!s.doc.source);
+  const hasImage = useDocument((s) => !!activeFrame(s.doc).source);
   const halftonePreview = useUi((s) => s.halftonePreview);
-  const result = usePreview((s) => s.result);
-  const print = usePreview((s) => s.print);
-  const ready = usePreview((s) => !!s.print?.overview && s.print.rev === s.rev);
+  const [saving, setSaving] = useState(false);
+
+  const savePreview = () => {
+    if (saving) return;
+    setSaving(true);
+    void downloadPreviewImage()
+      .catch((err: unknown) => {
+        console.error(err);
+        useDocument.setState({ error: err instanceof Error ? err.message : '미리보기 이미지를 저장하지 못했습니다.' });
+      })
+      .finally(() => setSaving(false));
+  };
 
   const soloLayer = layers.find((l) => l.id === selectedLayerId) ?? layers[0];
-  const badge = badgeFor(viewMode, halftonePreview && hasImage, ready);
-  const showPrintMeta = badge.kind === 'print' && print;
 
   return (
     <footer className="canvas-footer">
@@ -97,24 +88,11 @@ export function CanvasFooter({ onFit, onZoom }: Props) {
         망점
       </label>
 
-      <span className={`badge badge-${badge.kind}`}>
-        {badge.text}
-        {viewMode === 'layer' && soloLayer ? ` · ${soloLayer.name}` : ''}
-      </span>
-
       <div className="spacer" />
 
-      {showPrintMeta ? (
-        <span className="meta" title="망점 생성 시간 / 화면 갱신 시간">
-          인쇄 {print.width}×{print.height}px · 망점 {print.maskMs.toFixed(0)}ms
-        </span>
-      ) : (
-        result && (
-          <span className="meta">
-            근사 {result.width}×{result.height}px · {result.ms.toFixed(0)}ms
-          </span>
-        )
-      )}
+      <button className="btn small" disabled={saving} title="지금 보이는 목업 미리보기를 PNG로 저장" onClick={savePreview}>
+        {saving ? '저장 중…' : '미리보기 저장'}
+      </button>
 
       <div className="zoom-controls">
         <button className="icon-btn" title="축소 (X)" onClick={() => onZoom(0.8)}>

@@ -1,24 +1,32 @@
 import { create } from 'zustand';
+import { normalizeHex } from '../core/color';
 import {
+  activeFrame,
+  coverPlacement,
   createEmptyDoc,
+  createFrame,
   createLayer,
   DEFAULT_ADJUST,
   DEFAULT_ANGLES,
   DEFAULT_HALFTONE,
   DEFAULT_WHITE_POINT,
   defaultTone,
-  coverPlacement,
   fitPlacement,
+  MAX_IMAGES,
+  MAX_PALETTE,
   relayoutLayers,
 } from '../core/defaults';
+import { normalizeDoc } from '../core/normalizeDoc';
+import { migrateSeparation } from '../core/separation';
 import type {
   Artboard,
   ColorCount,
   HalftoneSettings,
   ImageAdjust,
+  ImageFrame,
   InkLayer,
-  MockupKind,
   LayerTone,
+  MockupKind,
   Placement,
   ProjectDoc,
   Rect,
@@ -26,18 +34,33 @@ import type {
 } from '../core/types';
 import { sources } from '../worker/pipelineClient';
 import { imageRegistry } from './imageRegistry';
+import { useUi } from './uiStore';
 
 export const ACCEPTED_TYPES = ['image/png', 'image/jpeg'];
 
 type LayerPatch = Partial<Omit<InkLayer, 'id' | 'tone' | 'halftone'>>;
+
+interface LoadedFile {
+  id: string;
+  file: File;
+  meta: { width: number; height: number; hasAlpha: boolean };
+}
+
+interface IncomingSource {
+  imageId: string;
+  blob: Blob;
+}
 
 interface DocumentState {
   doc: ProjectDoc;
   loading: boolean;
   error: string | null;
 
-  loadImage(file: File): Promise<void>;
-  openProject(doc: ProjectDoc, source: Blob | null): Promise<void>;
+  addImages(files: File[]): Promise<void>;
+  replaceImage(file: File): Promise<void>;
+  openProject(doc: ProjectDoc, incoming: IncomingSource[]): Promise<void>;
+  selectImage(id: string): void;
+  removeImage(id: string): void;
   clearImage(): void;
   setColorCount(count: ColorCount): void;
   updateLayer(id: string, patch: LayerPatch): void;
@@ -59,20 +82,72 @@ interface DocumentState {
   centerImage(): void;
   setPaperColor(hex: string): void;
   setMockup(mockup: MockupKind): void;
+  addPaletteColor(color: string, name: string): void;
+  updatePaletteColor(id: string, patch: { name?: string; color?: string }): void;
+  removePaletteColor(id: string): void;
   dismissError(): void;
 }
 
 const newId = () => crypto.randomUUID();
 
 /** Height / width of the cropped image, used to keep placement proportional. */
-function cropAspect(doc: ProjectDoc) {
-  const c = doc.crop;
-  return c && c.width > 0 ? c.height / c.width : doc.placement.heightMm / doc.placement.widthMm;
+function cropAspect(img: ImageFrame) {
+  const c = img.crop;
+  return c && c.width > 0 ? c.height / c.width : img.placement.heightMm / img.placement.widthMm;
+}
+
+function fileStem(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, '') || fileName;
+}
+
+function withSource(img: ImageFrame, loaded: LoadedFile, artboard: Artboard): ImageFrame {
+  const { file, meta, id } = loaded;
+  return {
+    ...img,
+    name: fileStem(file.name),
+    source: {
+      imageId: id,
+      fileName: file.name,
+      mimeType: file.type,
+      width: meta.width,
+      height: meta.height,
+      hasAlpha: meta.hasAlpha,
+    },
+    crop: { x: 0, y: 0, width: meta.width, height: meta.height },
+    placement: fitPlacement(artboard, meta.width, meta.height),
+  };
+}
+
+async function readFile(file: File): Promise<LoadedFile> {
+  const id = newId();
+  try {
+    const [meta, bitmap] = await Promise.all([sources.add(id, file), createImageBitmap(file)]);
+    imageRegistry.set(id, { blob: file, bitmap });
+    return { id, file, meta };
+  } catch (error) {
+    imageRegistry.remove(id);
+    sources.remove(id);
+    throw error;
+  }
+}
+
+function releaseImage(id: string) {
+  imageRegistry.remove(id);
+  sources.remove(id);
+}
+
+function leaveCropIfEmpty(doc: ProjectDoc) {
+  if (!activeFrame(doc).source && useUi.getState().tool === 'crop') useUi.getState().set({ tool: 'move' });
 }
 
 export const useDocument = create<DocumentState>((set, get) => {
   const patchDoc = (fn: (doc: ProjectDoc) => Partial<ProjectDoc>) =>
     set((s) => ({ doc: { ...s.doc, ...fn(s.doc) } }));
+
+  const patchActive = (fn: (img: ImageFrame, doc: ProjectDoc) => ImageFrame) =>
+    patchDoc((d) => ({
+      images: d.images.map((img) => (img.id === d.activeImageId ? fn(img, d) : img)),
+    }));
 
   const mapLayer = (id: string, fn: (l: InkLayer) => InkLayer) =>
     patchDoc((d) => ({ layers: d.layers.map((l) => (l.id === id ? fn(l) : l)) }));
@@ -82,87 +157,163 @@ export const useDocument = create<DocumentState>((set, get) => {
     loading: false,
     error: null,
 
-    async loadImage(file) {
+    async addImages(files) {
+      if (get().loading) return;
+      const rejected = files.filter((file) => !ACCEPTED_TYPES.includes(file.type));
+      const accepted = files.filter((file) => ACCEPTED_TYPES.includes(file.type));
+      if (!accepted.length) {
+        if (rejected.length) set({ error: 'PNG, JPG, JPEG 파일만 업로드할 수 있습니다.' });
+        return;
+      }
+      const doc = get().doc;
+      const active = activeFrame(doc);
+      const capacity = MAX_IMAGES - doc.images.length + (active.source ? 0 : 1);
+      const batch = accepted.slice(0, Math.max(0, capacity));
+      if (!batch.length) {
+        set({ error: `이미지는 최대 ${MAX_IMAGES}개까지 올릴 수 있습니다.` });
+        return;
+      }
+      set({ loading: true, error: null });
+      const loaded: LoadedFile[] = [];
+      const failed: string[] = [];
+      try {
+        for (const file of batch) {
+          try {
+            loaded.push(await readFile(file));
+          } catch (error) {
+            console.error(error);
+            failed.push(file.name);
+          }
+        }
+        if (!loaded.length) {
+          set({ error: '이미지를 불러오지 못했습니다. 파일이 손상되었는지 확인해 주세요.' });
+          return;
+        }
+        let firstId = '';
+        patchDoc((d) => {
+          const images = d.images.map((img) => ({ ...img }));
+          let cursor = 0;
+          const currentIndex = images.findIndex((img) => img.id === d.activeImageId);
+          const current = images[currentIndex];
+          if (current && !current.source) {
+            const next = withSource(current, loaded[cursor], d.artboard);
+            images[currentIndex] = next;
+            firstId = next.id;
+            cursor += 1;
+          }
+          for (; cursor < loaded.length; cursor++) {
+            const next = withSource(createFrame(images.length, d.artboard), loaded[cursor], d.artboard);
+            if (!firstId) firstId = next.id;
+            images.push(next);
+          }
+          return { images, activeImageId: firstId || d.activeImageId };
+        });
+        const notes: string[] = [];
+        if (rejected.length) notes.push('PNG, JPG, JPEG가 아닌 파일은 제외했습니다.');
+        if (accepted.length > batch.length) notes.push(`이미지는 최대 ${MAX_IMAGES}개까지라 나머지는 추가하지 않았습니다.`);
+        if (failed.length) notes.push(`불러오지 못한 파일: ${failed.join(', ')}`);
+        if (notes.length) set({ error: notes.join(' ') });
+      } finally {
+        set({ loading: false });
+      }
+    },
+
+    async replaceImage(file) {
+      if (get().loading) return;
       if (!ACCEPTED_TYPES.includes(file.type)) {
         set({ error: 'PNG, JPG, JPEG 파일만 업로드할 수 있습니다.' });
         return;
       }
       set({ loading: true, error: null });
-      const id = newId();
+      const prevId = activeFrame(get().doc).source?.imageId;
       try {
-        const [meta, bitmap] = await Promise.all([sources.add(id, file), createImageBitmap(file)]);
-        const prevId = get().doc.source?.imageId;
-        imageRegistry.set(id, { blob: file, bitmap });
-        patchDoc((d) => ({
-          source: {
-            imageId: id,
-            fileName: file.name,
-            mimeType: file.type,
-            width: meta.width,
-            height: meta.height,
-            hasAlpha: meta.hasAlpha,
-          },
-          crop: { x: 0, y: 0, width: meta.width, height: meta.height },
-          placement: fitPlacement(d.artboard, meta.width, meta.height),
-        }));
-        if (prevId) {
-          imageRegistry.remove(prevId);
-          sources.remove(prevId);
-        }
-      } catch (e) {
-        console.error(e);
+        const loaded = await readFile(file);
+        patchActive((img, d) => withSource(img, loaded, d.artboard));
+        if (prevId && prevId !== loaded.id) releaseImage(prevId);
+      } catch (error) {
+        console.error(error);
         set({ error: '이미지를 불러오지 못했습니다. 파일이 손상되었는지 확인해 주세요.' });
       } finally {
         set({ loading: false });
       }
     },
 
-    async openProject(doc, source) {
+    async openProject(doc, incoming) {
+      if (get().loading) return;
       set({ loading: true, error: null });
-      const prevId = get().doc.source?.imageId;
-      let added: string | null = null;
+      const prevIds = get().doc.images.flatMap((img) => (img.source ? [img.source.imageId] : []));
+      const added: string[] = [];
       try {
-        let next = doc;
-        if (doc.source) {
-          if (!source) throw new Error('프로젝트에 원본 이미지가 없습니다.');
-          const id = doc.source.imageId;
-          const blob = source.type ? source : new Blob([source], { type: doc.source.mimeType });
-          const [meta, bitmap] = await Promise.all([sources.add(id, blob), createImageBitmap(blob)]);
-          imageRegistry.get(id)?.bitmap.close();
-          imageRegistry.set(id, { blob, bitmap });
-          added = id;
-          next = {
-            ...doc,
-            source: { ...doc.source, width: meta.width, height: meta.height, hasAlpha: meta.hasAlpha },
-          };
+        let next = normalizeDoc(migrateSeparation(doc));
+        const byId = new Map(incoming.map((item) => [item.imageId, item.blob]));
+        const images: ImageFrame[] = [];
+        for (const img of next.images) {
+          if (!img.source) {
+            images.push(img);
+            continue;
+          }
+          const blob = byId.get(img.source.imageId);
+          if (!blob) throw new Error(`「${img.name}」 원본 이미지를 찾지 못했습니다.`);
+          const typed = blob.type ? blob : new Blob([blob], { type: img.source.mimeType });
+          const [meta, bitmap] = await Promise.all([sources.add(img.source.imageId, typed), createImageBitmap(typed)]);
+          imageRegistry.get(img.source.imageId)?.bitmap.close();
+          imageRegistry.set(img.source.imageId, { blob: typed, bitmap });
+          added.push(img.source.imageId);
+          images.push({
+            ...img,
+            source: { ...img.source, width: meta.width, height: meta.height, hasAlpha: meta.hasAlpha },
+          });
         }
-        if ((next.preview.mockup as string) === 'transparent' || (next.preview.mockup as string) === 'none') {
-          next = { ...next, preview: { ...next.preview, mockup: 'tshirt' } };
-        }
+        next = { ...next, images };
         set({ doc: next });
-        if (prevId && prevId !== next.source?.imageId) {
-          imageRegistry.remove(prevId);
-          sources.remove(prevId);
+        leaveCropIfEmpty(next);
+        for (const id of prevIds) {
+          if (!images.some((img) => img.source?.imageId === id)) releaseImage(id);
         }
-      } catch (e) {
-        console.error(e);
-        if (added && added !== prevId) {
-          imageRegistry.remove(added);
-          sources.remove(added);
+      } catch (error) {
+        console.error(error);
+        for (const id of added) {
+          if (!prevIds.includes(id)) releaseImage(id);
         }
-        set({ error: e instanceof Error ? e.message : '프로젝트를 열지 못했습니다.' });
+        set({ error: error instanceof Error ? error.message : '프로젝트를 열지 못했습니다.' });
       } finally {
         set({ loading: false });
       }
     },
 
-    clearImage() {
-      const id = get().doc.source?.imageId;
-      if (id) {
-        imageRegistry.remove(id);
-        sources.remove(id);
+    selectImage(id) {
+      const doc = get().doc;
+      if (!doc.images.some((img) => img.id === id) || doc.activeImageId === id) return;
+      patchDoc(() => ({ activeImageId: id }));
+      leaveCropIfEmpty(get().doc);
+    },
+
+    removeImage(id) {
+      const doc = get().doc;
+      const img = doc.images.find((item) => item.id === id);
+      if (!img) return;
+      if (doc.images.length === 1) {
+        get().clearImage();
+        return;
       }
-      patchDoc((d) => ({ source: null, crop: null, placement: fitPlacement(d.artboard, 3, 4) }));
+      const index = doc.images.findIndex((item) => item.id === id);
+      const images = doc.images.filter((item) => item.id !== id);
+      const activeImageId = doc.activeImageId === id ? images[Math.max(0, index - 1)].id : doc.activeImageId;
+      patchDoc(() => ({ images, activeImageId }));
+      if (img.source) releaseImage(img.source.imageId);
+      leaveCropIfEmpty(get().doc);
+    },
+
+    clearImage() {
+      const id = activeFrame(get().doc).source?.imageId;
+      if (id) releaseImage(id);
+      patchActive((img, d) => ({
+        ...img,
+        source: null,
+        crop: null,
+        placement: fitPlacement(d.artboard, 3, 4),
+      }));
+      leaveCropIfEmpty(get().doc);
     },
 
     setColorCount(count) {
@@ -193,11 +344,11 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     setAdjust(patch) {
-      patchDoc((d) => ({ adjust: { ...d.adjust, ...patch } }));
+      patchActive((img) => ({ ...img, adjust: { ...img.adjust, ...patch } }));
     },
 
     resetAdjust() {
-      patchDoc(() => ({ adjust: { ...DEFAULT_ADJUST } }));
+      patchActive((img) => ({ ...img, adjust: { ...DEFAULT_ADJUST } }));
     },
 
     setSeparation(patch) {
@@ -231,39 +382,40 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     setPlacement(patch) {
-      patchDoc((d) => {
-        const next = { ...d.placement, ...patch };
-        if (d.lockRatio) {
-          const aspect = cropAspect(d);
+      patchActive((img) => {
+        const next = { ...img.placement, ...patch };
+        if (img.lockRatio) {
+          const aspect = cropAspect(img);
           if (patch.widthMm !== undefined && patch.heightMm === undefined) next.heightMm = next.widthMm * aspect;
           if (patch.heightMm !== undefined && patch.widthMm === undefined) next.widthMm = next.heightMm / aspect;
         }
         next.widthMm = Math.max(1, next.widthMm);
         next.heightMm = Math.max(1, next.heightMm);
-        return { placement: next };
+        return { ...img, placement: next };
       });
     },
 
     setLockRatio(lockRatio) {
-      patchDoc((d) => {
-        if (!lockRatio) return { lockRatio };
-        const p = d.placement;
-        return { lockRatio, placement: { ...p, heightMm: p.widthMm * cropAspect(d) } };
+      patchActive((img) => {
+        if (!lockRatio) return { ...img, lockRatio };
+        const p = img.placement;
+        return { ...img, lockRatio, placement: { ...p, heightMm: p.widthMm * cropAspect(img) } };
       });
     },
 
     setCrop(crop, placement) {
-      patchDoc(() => ({ crop, placement }));
+      patchActive((img) => ({ ...img, crop, placement }));
     },
 
     resetCrop() {
-      patchDoc((d) => {
-        if (!d.source || !d.crop) return {};
-        const { width, height } = d.source;
-        const scale = d.placement.widthMm / d.crop.width;
-        const originX = d.placement.xMm - d.crop.x * scale;
-        const originY = d.placement.yMm - d.crop.y * scale;
+      patchActive((img) => {
+        if (!img.source || !img.crop) return img;
+        const { width, height } = img.source;
+        const scale = img.placement.widthMm / img.crop.width;
+        const originX = img.placement.xMm - img.crop.x * scale;
+        const originY = img.placement.yMm - img.crop.y * scale;
         return {
+          ...img,
           crop: { x: 0, y: 0, width, height },
           placement: { xMm: originX, yMm: originY, widthMm: width * scale, heightMm: height * scale },
         };
@@ -271,15 +423,16 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     fitImage() {
-      patchDoc((d) => (d.crop ? { placement: coverPlacement(d.artboard, d.crop.width, d.crop.height) } : {}));
+      patchActive((img, d) => (img.crop ? { ...img, placement: coverPlacement(d.artboard, img.crop.width, img.crop.height) } : img));
     },
 
     centerImage() {
-      patchDoc((d) => ({
+      patchActive((img, d) => ({
+        ...img,
         placement: {
-          ...d.placement,
-          xMm: (d.artboard.widthMm - d.placement.widthMm) / 2,
-          yMm: (d.artboard.heightMm - d.placement.heightMm) / 2,
+          ...img.placement,
+          xMm: (d.artboard.widthMm - img.placement.widthMm) / 2,
+          yMm: (d.artboard.heightMm - img.placement.heightMm) / 2,
         },
       }));
     },
@@ -290,6 +443,32 @@ export const useDocument = create<DocumentState>((set, get) => {
 
     setMockup(mockup) {
       patchDoc((d) => ({ preview: { ...d.preview, mockup } }));
+    },
+
+    addPaletteColor(color, name) {
+      const hex = normalizeHex(color);
+      if (!hex) return;
+      if (get().doc.palette.length >= MAX_PALETTE) {
+        set({ error: `색상 라이브러리는 최대 ${MAX_PALETTE}개까지입니다.` });
+        return;
+      }
+      const label = name.trim().slice(0, 40) || hex;
+      patchDoc((d) => ({ palette: [...d.palette, { id: newId(), name: label, color: hex }] }));
+    },
+
+    updatePaletteColor(id, patch) {
+      patchDoc((d) => ({
+        palette: d.palette.map((swatch) => {
+          if (swatch.id !== id) return swatch;
+          const color = patch.color !== undefined ? (normalizeHex(patch.color) ?? swatch.color) : swatch.color;
+          const name = patch.name !== undefined ? patch.name.trim().slice(0, 40) || swatch.name : swatch.name;
+          return { ...swatch, color, name };
+        }),
+      }));
+    },
+
+    removePaletteColor(id) {
+      patchDoc((d) => ({ palette: d.palette.filter((swatch) => swatch.id !== id) }));
     },
 
     dismissError() {
