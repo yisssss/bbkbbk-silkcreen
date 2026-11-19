@@ -128,20 +128,21 @@ export function CanvasView() {
     ctx.fillRect(0, 0, w, h);
 
     const { doc } = useDocument.getState();
+    const image = activeFrame(doc);
     const ui = useUi.getState();
     const preview = usePreview.getState();
     const result = preview.result;
-    const ab = toScreen({ x: 0, y: 0, width: doc.artboard.widthMm, height: doc.artboard.heightMm });
+    const ab = toScreen({ x: 0, y: 0, width: image.artboard.widthMm, height: image.artboard.heightMm });
 
     const photoKind = doc.preview.mockup;
     const photo = photos.current[photoKind];
     if (photoKind && photo) {
-      const frame = toScreen(mockupFrame(doc.artboard, photoKind));
-      const key = `${photoKind}|${doc.preview.paperColor}`;
-      if (tinted.current?.key !== key) tinted.current = { key, canvas: tintPhoto(photo, doc.preview.paperColor) };
+      const frame = toScreen(mockupFrame(image.artboard, photoKind));
+      const key = `${photoKind}|${image.paperColor}`;
+      if (tinted.current?.key !== key) tinted.current = { key, canvas: tintPhoto(photo, image.paperColor) };
       ctx.drawImage(tinted.current.canvas, frame.x, frame.y, frame.width, frame.height);
     } else {
-      ctx.fillStyle = doc.preview.paperColor;
+      ctx.fillStyle = image.paperColor;
       ctx.fillRect(ab.x, ab.y, ab.width, ab.height);
     }
 
@@ -174,9 +175,8 @@ export function CanvasView() {
     const fmt = (mm: number) => mmToUnit(mm, ui.unit).toFixed(ui.unit === 'cm' ? 1 : 0);
     ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,.55)';
-    ctx.fillText(`인쇄 영역 ${fmt(doc.artboard.widthMm)} × ${fmt(doc.artboard.heightMm)} ${ui.unit}`, ab.x, ab.y - 8);
+    ctx.fillText(`인쇄 영역 ${fmt(image.artboard.widthMm)} × ${fmt(image.artboard.heightMm)} ${ui.unit}`, ab.x, ab.y - 8);
 
-    const image = activeFrame(doc);
     if (!image.source || !image.crop) return;
     const pr = toScreen(placementToRect(image.placement));
 
@@ -249,8 +249,8 @@ export function CanvasView() {
   const fit = useCallback(() => {
     const { w, h } = sizeRef.current;
     if (!w || !h) return;
-    const { artboard, preview } = useDocument.getState().doc;
-    const frame = mockupFrame(artboard, preview.mockup);
+    const { doc } = useDocument.getState();
+    const frame = mockupFrame(activeFrame(doc).artboard, doc.preview.mockup);
     const pad = 72;
     const zoom = clamp(Math.min((w - pad * 2) / frame.width, (h - pad * 2) / frame.height), MIN_ZOOM, MAX_ZOOM);
     useUi.getState().set({
@@ -263,7 +263,7 @@ export function CanvasView() {
   const cover = useCallback(() => {
     const { w, h } = sizeRef.current;
     if (!w || !h) return;
-    const { widthMm, heightMm } = useDocument.getState().doc.artboard;
+    const { widthMm, heightMm } = activeFrame(useDocument.getState().doc).artboard;
     const zoom = clamp(Math.max(w / widthMm, h / heightMm), MIN_ZOOM, MAX_ZOOM);
     useUi.getState().set({
       zoom,

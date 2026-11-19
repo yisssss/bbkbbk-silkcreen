@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MAX_PALETTE } from '../core/defaults';
+import { activeFrame, MAX_PALETTE } from '../core/defaults';
 import type { PaletteColor } from '../core/types';
 import { useDocument } from '../state/documentStore';
 import { useUi } from '../state/uiStore';
@@ -46,7 +46,7 @@ function PaletteName({ name, onCommit }: { name: string; onCommit: (name: string
 
 export function PaletteLibrary() {
   const palette = useDocument((s) => s.doc.palette);
-  const layers = useDocument((s) => s.doc.layers);
+  const layers = useDocument((s) => activeFrame(s.doc).layers);
   const addPaletteColor = useDocument((s) => s.addPaletteColor);
   const updatePaletteColor = useDocument((s) => s.updatePaletteColor);
   const removePaletteColor = useDocument((s) => s.removePaletteColor);

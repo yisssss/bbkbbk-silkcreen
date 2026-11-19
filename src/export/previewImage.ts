@@ -58,11 +58,12 @@ function artboardPixels(): { width: number; height: number } {
     };
   }
   if (preview.result) return { width: preview.result.width, height: preview.result.height };
-  const long = Math.max(doc.artboard.widthMm, doc.artboard.heightMm);
+  const artboard = activeFrame(doc).artboard;
+  const long = Math.max(artboard.widthMm, artboard.heightMm);
   const pxPerMm = Math.min(mmToPx(1), 1600 / long);
   return {
-    width: Math.max(1, Math.round(doc.artboard.widthMm * pxPerMm)),
-    height: Math.max(1, Math.round(doc.artboard.heightMm * pxPerMm)),
+    width: Math.max(1, Math.round(artboard.widthMm * pxPerMm)),
+    height: Math.max(1, Math.round(artboard.heightMm * pxPerMm)),
   };
 }
 
@@ -92,11 +93,12 @@ export async function downloadPreviewImage() {
   }
 
   const { doc } = useDocument.getState();
+  const image = activeFrame(doc);
   const ui = useUi.getState();
   const preview = usePreview.getState();
-  const frame = mockupFrame(doc.artboard, kind);
+  const frame = mockupFrame(image.artboard, kind);
   const art = artboardPixels();
-  let pxPerMm = art.width / doc.artboard.widthMm;
+  let pxPerMm = art.width / image.artboard.widthMm;
   const long = Math.max(frame.width, frame.height) * pxPerMm;
   if (long > MAX_SIDE) pxPerMm *= MAX_SIDE / long;
 
@@ -109,10 +111,10 @@ export async function downloadPreviewImage() {
   if (!ctx) throw new Error('미리보기 이미지를 만들지 못했습니다.');
 
   if (photo) {
-    const tinted = tintPhoto(photo, doc.preview.paperColor, Math.max(width, height));
+    const tinted = tintPhoto(photo, image.paperColor, Math.max(width, height));
     ctx.drawImage(tinted, 0, 0, width, height);
   } else {
-    ctx.fillStyle = doc.preview.paperColor;
+    ctx.fillStyle = image.paperColor;
     ctx.fillRect(0, 0, width, height);
   }
 
@@ -127,8 +129,8 @@ export async function downloadPreviewImage() {
       preview.result.bitmap,
       originX,
       originY,
-      doc.artboard.widthMm * pxPerMm,
-      doc.artboard.heightMm * pxPerMm,
+      image.artboard.widthMm * pxPerMm,
+      image.artboard.heightMm * pxPerMm,
     );
   }
 

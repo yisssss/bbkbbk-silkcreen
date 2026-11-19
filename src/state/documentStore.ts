@@ -100,7 +100,7 @@ function fileStem(fileName: string) {
   return fileName.replace(/\.[^.]+$/, '') || fileName;
 }
 
-function withSource(img: ImageFrame, loaded: LoadedFile, artboard: Artboard): ImageFrame {
+function withSource(img: ImageFrame, loaded: LoadedFile): ImageFrame {
   const { file, meta, id } = loaded;
   return {
     ...img,
@@ -114,7 +114,7 @@ function withSource(img: ImageFrame, loaded: LoadedFile, artboard: Artboard): Im
       hasAlpha: meta.hasAlpha,
     },
     crop: { x: 0, y: 0, width: meta.width, height: meta.height },
-    placement: fitPlacement(artboard, meta.width, meta.height),
+    placement: fitPlacement(img.artboard, meta.width, meta.height),
   };
 }
 
@@ -140,6 +140,14 @@ function leaveCropIfEmpty(doc: ProjectDoc) {
   if (!activeFrame(doc).source && useUi.getState().tool === 'crop') useUi.getState().set({ tool: 'move' });
 }
 
+/** Keep the layer highlight when the active picture's inks are a different set. */
+function keepLayerSelection(doc: ProjectDoc, preferIndex = 0) {
+  const layers = activeFrame(doc).layers;
+  const selected = useUi.getState().selectedLayerId;
+  if (selected && layers.some((l) => l.id === selected)) return;
+  useUi.getState().set({ selectedLayerId: layers[preferIndex]?.id ?? layers[0]?.id ?? null });
+}
+
 export const useDocument = create<DocumentState>((set, get) => {
   const patchDoc = (fn: (doc: ProjectDoc) => Partial<ProjectDoc>) =>
     set((s) => ({ doc: { ...s.doc, ...fn(s.doc) } }));
@@ -150,7 +158,7 @@ export const useDocument = create<DocumentState>((set, get) => {
     }));
 
   const mapLayer = (id: string, fn: (l: InkLayer) => InkLayer) =>
-    patchDoc((d) => ({ layers: d.layers.map((l) => (l.id === id ? fn(l) : l)) }));
+    patchActive((img) => ({ ...img, layers: img.layers.map((l) => (l.id === id ? fn(l) : l)) }));
 
   return {
     doc: createEmptyDoc(),
@@ -167,6 +175,7 @@ export const useDocument = create<DocumentState>((set, get) => {
       }
       const doc = get().doc;
       const active = activeFrame(doc);
+      const preferLayer = Math.max(0, active.layers.findIndex((l) => l.id === useUi.getState().selectedLayerId));
       const capacity = MAX_IMAGES - doc.images.length + (active.source ? 0 : 1);
       const batch = accepted.slice(0, Math.max(0, capacity));
       if (!batch.length) {
@@ -196,18 +205,20 @@ export const useDocument = create<DocumentState>((set, get) => {
           const currentIndex = images.findIndex((img) => img.id === d.activeImageId);
           const current = images[currentIndex];
           if (current && !current.source) {
-            const next = withSource(current, loaded[cursor], d.artboard);
+            const next = withSource(current, loaded[cursor]);
             images[currentIndex] = next;
             firstId = next.id;
             cursor += 1;
           }
+          const template = images[currentIndex] ?? images[0];
           for (; cursor < loaded.length; cursor++) {
-            const next = withSource(createFrame(images.length, d.artboard), loaded[cursor], d.artboard);
+            const next = withSource(createFrame(images.length, template), loaded[cursor]);
             if (!firstId) firstId = next.id;
             images.push(next);
           }
           return { images, activeImageId: firstId || d.activeImageId };
         });
+        keepLayerSelection(get().doc, preferLayer);
         const notes: string[] = [];
         if (rejected.length) notes.push('PNG, JPG, JPEG가 아닌 파일은 제외했습니다.');
         if (accepted.length > batch.length) notes.push(`이미지는 최대 ${MAX_IMAGES}개까지라 나머지는 추가하지 않았습니다.`);
@@ -228,7 +239,7 @@ export const useDocument = create<DocumentState>((set, get) => {
       const prevId = activeFrame(get().doc).source?.imageId;
       try {
         const loaded = await readFile(file);
-        patchActive((img, d) => withSource(img, loaded, d.artboard));
+        patchActive((img) => withSource(img, loaded));
         if (prevId && prevId !== loaded.id) releaseImage(prevId);
       } catch (error) {
         console.error(error);
@@ -284,7 +295,14 @@ export const useDocument = create<DocumentState>((set, get) => {
     selectImage(id) {
       const doc = get().doc;
       if (!doc.images.some((img) => img.id === id) || doc.activeImageId === id) return;
+      const prev = activeFrame(doc);
+      const next = doc.images.find((img) => img.id === id)!;
+      const preferLayer = Math.max(0, prev.layers.findIndex((l) => l.id === useUi.getState().selectedLayerId));
+      const sizeChanged =
+        prev.artboard.widthMm !== next.artboard.widthMm || prev.artboard.heightMm !== next.artboard.heightMm;
       patchDoc(() => ({ activeImageId: id }));
+      keepLayerSelection(get().doc, preferLayer);
+      if (sizeChanged) useUi.getState().requestFit();
       leaveCropIfEmpty(get().doc);
     },
 
@@ -300,6 +318,7 @@ export const useDocument = create<DocumentState>((set, get) => {
       const images = doc.images.filter((item) => item.id !== id);
       const activeImageId = doc.activeImageId === id ? images[Math.max(0, index - 1)].id : doc.activeImageId;
       patchDoc(() => ({ images, activeImageId }));
+      keepLayerSelection(get().doc);
       if (img.source) releaseImage(img.source.imageId);
       leaveCropIfEmpty(get().doc);
     },
@@ -307,19 +326,21 @@ export const useDocument = create<DocumentState>((set, get) => {
     clearImage() {
       const id = activeFrame(get().doc).source?.imageId;
       if (id) releaseImage(id);
-      patchActive((img, d) => ({
+      patchActive((img) => ({
         ...img,
         source: null,
         crop: null,
-        placement: fitPlacement(d.artboard, 3, 4),
+        placement: fitPlacement(img.artboard, 3, 4),
       }));
       leaveCropIfEmpty(get().doc);
     },
 
     setColorCount(count) {
-      patchDoc((d) => ({
-        layers: d.layers.length ? relayoutLayers(d.layers, count) : [createLayer(0, count)],
+      patchActive((img) => ({
+        ...img,
+        layers: img.layers.length ? relayoutLayers(img.layers, count) : [createLayer(0, count)],
       }));
+      keepLayerSelection(get().doc);
     },
 
     updateLayer(id, patch) {
@@ -331,15 +352,16 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     resetTone(id) {
-      const layers = get().doc.layers;
+      const layers = activeFrame(get().doc).layers;
       const index = layers.findIndex((l) => l.id === id);
       mapLayer(id, (l) => ({ ...l, tone: defaultTone(index, layers.length) }));
     },
 
     resetGradient() {
-      patchDoc((d) => ({
-        separation: { ...d.separation, whitePoint: DEFAULT_WHITE_POINT },
-        layers: d.layers.map((l, i) => ({ ...l, tone: defaultTone(i, d.layers.length) })),
+      patchActive((img) => ({
+        ...img,
+        separation: { ...img.separation, whitePoint: DEFAULT_WHITE_POINT },
+        layers: img.layers.map((l, i) => ({ ...l, tone: defaultTone(i, img.layers.length) })),
       }));
     },
 
@@ -352,24 +374,25 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     setSeparation(patch) {
-      patchDoc((d) => ({ separation: { ...d.separation, ...patch } }));
+      patchActive((img) => ({ ...img, separation: { ...img.separation, ...patch } }));
     },
 
     setHalftone(patch) {
-      patchDoc((d) => {
-        const next = { ...d.halftone, ...patch };
+      patchActive((img) => {
+        const next = { ...img.halftone, ...patch };
         if (next.minDotPct > next.maxDotPct) {
           if (patch.minDotPct !== undefined) next.maxDotPct = next.minDotPct;
           else next.minDotPct = next.maxDotPct;
         }
-        return { halftone: next };
+        return { ...img, halftone: next };
       });
     },
 
     resetHalftone() {
-      patchDoc((d) => ({
+      patchActive((img) => ({
+        ...img,
         halftone: { ...DEFAULT_HALFTONE },
-        layers: d.layers.map((l, i) => ({ ...l, halftone: { ...l.halftone, angleDeg: DEFAULT_ANGLES[i] ?? 22.5 } })),
+        layers: img.layers.map((l, i) => ({ ...l, halftone: { ...l.halftone, angleDeg: DEFAULT_ANGLES[i] ?? 22.5 } })),
       }));
     },
 
@@ -378,7 +401,7 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     setArtboard(patch) {
-      patchDoc((d) => ({ artboard: { ...d.artboard, ...patch } }));
+      patchActive((img) => ({ ...img, artboard: { ...img.artboard, ...patch } }));
     },
 
     setPlacement(patch) {
@@ -423,22 +446,22 @@ export const useDocument = create<DocumentState>((set, get) => {
     },
 
     fitImage() {
-      patchActive((img, d) => (img.crop ? { ...img, placement: coverPlacement(d.artboard, img.crop.width, img.crop.height) } : img));
+      patchActive((img) => (img.crop ? { ...img, placement: coverPlacement(img.artboard, img.crop.width, img.crop.height) } : img));
     },
 
     centerImage() {
-      patchActive((img, d) => ({
+      patchActive((img) => ({
         ...img,
         placement: {
           ...img.placement,
-          xMm: (d.artboard.widthMm - img.placement.widthMm) / 2,
-          yMm: (d.artboard.heightMm - img.placement.heightMm) / 2,
+          xMm: (img.artboard.widthMm - img.placement.widthMm) / 2,
+          yMm: (img.artboard.heightMm - img.placement.heightMm) / 2,
         },
       }));
     },
 
     setPaperColor(paperColor) {
-      patchDoc((d) => ({ preview: { ...d.preview, paperColor } }));
+      patchActive((img) => ({ ...img, paperColor }));
     },
 
     setMockup(mockup) {

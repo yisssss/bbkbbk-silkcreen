@@ -1,5 +1,5 @@
 import { buildAdjustLut } from './tone';
-import type { ImageAdjust, LayerTone, ProjectDoc, SeparationSettings } from './types';
+import type { ImageAdjust, ImageFrame, InkLayer, LayerTone, ProjectDoc, SeparationSettings } from './types';
 import { clamp01 } from './units';
 
 type ToneLayer = { tone: LayerTone };
@@ -20,16 +20,40 @@ export function migrateLayerTone(
   return { solidLo: stop, solidHi: stop };
 }
 
+type ToneDoc = {
+  separation?: SeparationSettings & { mode?: string };
+  layers?: InkLayer[];
+  images?: Array<ImageFrame & { separation?: SeparationSettings & { mode?: string } }>;
+};
+
+function migratedSeparation(sep: SeparationSettings & { mode?: string }): SeparationSettings {
+  return { overprint: !!sep.overprint, whitePoint: sep.whitePoint ?? 0 };
+}
+
+function migratedLayers(layers: InkLayer[], mode?: string): InkLayer[] {
+  return layers.map((layer) => ({ ...layer, tone: migrateLayerTone(layer.tone, mode) }));
+}
+
 /** Fills in the unified tone fields and drops the old tonal/threshold switch. */
-export function migrateSeparation(doc: ProjectDoc): ProjectDoc {
-  const legacy = doc.separation as SeparationSettings & { mode?: string };
+export function migrateSeparation<T extends ProjectDoc & ToneDoc>(doc: T): T {
+  const mode = doc.separation?.mode;
+  const images = Array.isArray(doc.images)
+    ? doc.images.map((img) => {
+        const frame = img as ImageFrame & { separation?: SeparationSettings & { mode?: string } };
+        const frameMode = frame.separation?.mode ?? mode;
+        if (!frame.separation && !Array.isArray(frame.layers)) return img;
+        return {
+          ...img,
+          ...(frame.separation ? { separation: migratedSeparation(frame.separation) } : {}),
+          ...(Array.isArray(frame.layers) ? { layers: migratedLayers(frame.layers, frameMode) } : {}),
+        };
+      })
+    : doc.images;
   return {
     ...doc,
-    separation: { overprint: !!legacy?.overprint, whitePoint: legacy?.whitePoint ?? 0 },
-    layers: doc.layers.map((layer) => ({
-      ...layer,
-      tone: migrateLayerTone(layer.tone, legacy?.mode),
-    })),
+    ...(doc.separation ? { separation: migratedSeparation(doc.separation) } : {}),
+    ...(Array.isArray(doc.layers) ? { layers: migratedLayers(doc.layers, mode) } : {}),
+    images,
   };
 }
 

@@ -12,12 +12,12 @@ type Busy = string | null;
 export function ExportPanel() {
   const doc = useDocument((s) => s.doc);
   const image = activeFrame(doc);
-  const inkArea = usePreview((s) => (s.print?.inkArea.length === doc.layers.length ? s.print.inkArea : null));
+  const inkArea = usePreview((s) => (s.print?.inkArea.length === image.layers.length ? s.print.inkArea : null));
   const setUi = useUi((s) => s.set);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
-  const px = printPixelSize(doc.artboard.widthMm, doc.artboard.heightMm);
-  const angled = usesScreenAngle(doc.halftone);
+  const px = printPixelSize(image.artboard.widthMm, image.artboard.heightMm);
+  const angled = usesScreenAngle(image.halftone);
 
   const run = async (what: Busy, task: () => Promise<void>) => {
     setError(null);
@@ -47,7 +47,7 @@ export function ExportPanel() {
         <dl className="info-list">
           <dt>출력 크기</dt>
           <dd>
-            {doc.artboard.widthMm} × {doc.artboard.heightMm} mm
+            {image.artboard.widthMm} × {image.artboard.heightMm} mm
           </dd>
           <dt>픽셀</dt>
           <dd>
@@ -63,7 +63,7 @@ export function ExportPanel() {
         <p className="note">{image.name} 탭을 내보냅니다. 다른 그림은 캔버스 위 탭에서 고른 뒤 저장하세요.</p>
         {!image.source && <p className="note">이미지를 열면 분판을 저장할 수 있습니다.</p>}
         <ul className="export-list">
-          {doc.layers.map((l, i) => (
+          {image.layers.map((l, i) => (
             <li key={l.id}>
               <span className="layer-swatch" style={{ background: l.color }} />
               <div className="export-info">

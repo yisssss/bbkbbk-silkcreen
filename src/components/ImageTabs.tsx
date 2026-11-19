@@ -14,7 +14,7 @@ export function ImageTabs() {
   const full = doc.images.length >= MAX_IMAGES && !!active.source;
 
   const closeTab = (img: ImageFrame) => {
-    if (img.source && !window.confirm(`「${img.name}」 탭을 없앨까요? 이 그림의 조정은 함께 사라집니다.`)) return;
+    if (img.source && !window.confirm(`「${img.name}」 탭을 없앨까요? 이 그림의 색상, 망점, 출력 설정도 함께 사라집니다.`)) return;
     removeImage(img.id);
   };
 

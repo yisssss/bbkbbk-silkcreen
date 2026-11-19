@@ -8,11 +8,11 @@ export function printJobFromDoc(doc: ProjectDoc): PrintJob {
   return {
     imageId: image.source?.imageId ?? null,
     crop: image.crop,
-    artboard: doc.artboard,
+    artboard: image.artboard,
     placement: image.placement,
-    layers: doc.layers.map((l) => ({ id: l.id, tone: l.tone, angleDeg: l.halftone.angleDeg })),
+    layers: image.layers.map((l) => ({ id: l.id, tone: l.tone, angleDeg: l.halftone.angleDeg })),
     adjust: image.adjust,
-    separation: doc.separation,
-    halftone: { ...doc.halftone, pattern: 'ordered' },
+    separation: image.separation,
+    halftone: { ...image.halftone, pattern: 'ordered' },
   };
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { activeFrame } from '../core/defaults';
 import type { ColorCount, InkLayer } from '../core/types';
 import { useDocument } from '../state/documentStore';
 import { usePreview, useUi } from '../state/uiStore';
@@ -28,15 +29,17 @@ export function RightPanel() {
   const printInk = usePreview((s) => (s.print && s.print.detailRev === s.rev ? s.print.inkArea : null));
   const [tab, setTab] = useState<RightTab>('color');
 
-  const { layers, separation } = doc;
+  const frame = activeFrame(doc);
+  const { layers, separation, paperColor } = frame;
   const bands = describeBands(layers);
 
   return (
     <aside className="panel panel-right panel-split">
       <section className="panel-section layers-dock">
         <h2 className="section-title">레이어</h2>
+        <p className="note">색과 망점은 「{frame.name}」 탭에만 적용됩니다.</p>
         <ul className="layer-list">
-          {doc.layers.map((l, i) => {
+          {layers.map((l, i) => {
             const thumb = thumbs?.find((t) => t.id === l.id);
             const solo = viewMode === 'layer' && selectedLayerId === l.id;
             return (
@@ -134,7 +137,7 @@ export function RightPanel() {
                 />
                 <span>오버프린트</span>
               </label>
-              <GradientMapBar layers={layers} separation={separation} paperColor={doc.preview.paperColor} />
+              <GradientMapBar layers={layers} separation={separation} paperColor={paperColor} />
             </section>
 
             <section className="panel-section">

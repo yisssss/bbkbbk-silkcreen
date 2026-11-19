@@ -31,7 +31,7 @@ export function CanvasFooter({ onFit, onZoom }: Props) {
   const zoom = useUi((s) => s.zoom);
   const selectedLayerId = useUi((s) => s.selectedLayerId);
   const set = useUi((s) => s.set);
-  const layers = useDocument((s) => s.doc.layers);
+  const layers = useDocument((s) => activeFrame(s.doc).layers);
   const hasImage = useDocument((s) => !!activeFrame(s.doc).source);
   const halftonePreview = useUi((s) => s.halftonePreview);
   const [saving, setSaving] = useState(false);

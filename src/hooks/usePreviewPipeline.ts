@@ -18,19 +18,19 @@ function buildDraftRequest(): RenderRequest {
   const { doc } = useDocument.getState();
   const image = activeFrame(doc);
   const ui = useUi.getState();
-  const longMm = Math.max(doc.artboard.widthMm, doc.artboard.heightMm);
+  const longMm = Math.max(image.artboard.widthMm, image.artboard.heightMm);
   return {
     imageId: image.source?.imageId ?? null,
     crop: image.crop,
-    artboard: doc.artboard,
+    artboard: image.artboard,
     placement: image.placement,
     pxPerMm: Math.min(PREVIEW_LONG_SIDE / longMm, mmToPx(1)),
-    layers: doc.layers.map((l) => ({ id: l.id, color: l.color, tone: l.tone, visible: l.visible })),
+    layers: image.layers.map((l) => ({ id: l.id, color: l.color, tone: l.tone, visible: l.visible })),
     adjust: image.adjust,
-    separation: doc.separation,
+    separation: image.separation,
     view: ui.viewMode,
     soloLayerId: ui.selectedLayerId,
-    paperColor: doc.preview.paperColor,
+    paperColor: image.paperColor,
     transparentPaper: ui.viewMode !== 'layer',
     thumbWidth: 96,
   };
@@ -41,16 +41,16 @@ function buildDraftRequest(): RenderRequest {
  * past the overview's resolution. k keeps the tile close to device pixel size.
  */
 function visibleDetailRegion(): PrintRegion | null {
-  const { doc } = useDocument.getState();
+  const image = activeFrame(useDocument.getState().doc);
   const ui = useUi.getState();
-  const { width, height } = printPixelSize(doc.artboard.widthMm, doc.artboard.heightMm);
+  const { width, height } = printPixelSize(image.artboard.widthMm, image.artboard.heightMm);
   const printPxPerMm = mmToPx(1);
   const devicePxPerMm = ui.zoom * (window.devicePixelRatio || 1);
   if (devicePxPerMm <= (printPxPerMm / overviewScale(width, height)) * 1.05) return null;
   const x0 = Math.max(0, -ui.panX / ui.zoom);
   const y0 = Math.max(0, -ui.panY / ui.zoom);
-  const x1 = Math.min(doc.artboard.widthMm, (ui.viewportW - ui.panX) / ui.zoom);
-  const y1 = Math.min(doc.artboard.heightMm, (ui.viewportH - ui.panY) / ui.zoom);
+  const x1 = Math.min(image.artboard.widthMm, (ui.viewportW - ui.panX) / ui.zoom);
+  const y1 = Math.min(image.artboard.heightMm, (ui.viewportH - ui.panY) / ui.zoom);
   if (x1 <= x0 || y1 <= y0) return null;
   return {
     x: x0 * printPxPerMm,
@@ -63,6 +63,7 @@ function visibleDetailRegion(): PrintRegion | null {
 
 function buildPrintRequest(wantOverview: boolean): PrintViewRequest {
   const { doc } = useDocument.getState();
+  const image = activeFrame(doc);
   const ui = useUi.getState();
   const { rev, print } = usePreview.getState();
   return {
@@ -70,10 +71,10 @@ function buildPrintRequest(wantOverview: boolean): PrintViewRequest {
     job: printJobFromDoc(doc),
     view: ui.viewMode === 'layer' ? 'layer' : 'composite',
     soloLayerId: ui.selectedLayerId,
-    paperColor: doc.preview.paperColor,
+    paperColor: image.paperColor,
     transparentPaper: ui.viewMode !== 'layer',
-    colors: doc.layers.map((l) => l.color),
-    visible: doc.layers.map((l) => l.visible),
+    colors: image.layers.map((l) => l.color),
+    visible: image.layers.map((l) => l.visible),
     overview: wantOverview || print?.rev !== rev,
     detail: visibleDetailRegion(),
   };

@@ -1,5 +1,5 @@
 import { useEffect, type CSSProperties } from 'react';
-import { DEFAULT_ANGLES, DEFAULT_HALFTONE } from '../core/defaults';
+import { activeFrame, DEFAULT_ANGLES, DEFAULT_HALFTONE } from '../core/defaults';
 import { usesScreenAngle } from '../core/halftone';
 import { MM_PER_INCH } from '../core/units';
 import { useDocument } from '../state/documentStore';
@@ -7,8 +7,9 @@ import { RangeField } from './controls/RangeField';
 import { SliderField } from './controls/SliderField';
 
 export function HalftonePanel() {
-  const halftone = useDocument((s) => s.doc.halftone);
-  const layers = useDocument((s) => s.doc.layers);
+  const frame = useDocument((s) => activeFrame(s.doc));
+  const halftone = frame.halftone;
+  const layers = frame.layers;
   const setHalftone = useDocument((s) => s.setHalftone);
   const resetHalftone = useDocument((s) => s.resetHalftone);
   const setLayerAngle = useDocument((s) => s.setLayerAngle);

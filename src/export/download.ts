@@ -32,7 +32,7 @@ function currentDoc(): ProjectDoc {
 /** One plate, exactly the mask the halftone preview is showing. */
 export async function downloadLayerPng(index: number) {
   const doc = currentDoc();
-  const layer = doc.layers[index];
+  const layer = activeFrame(doc).layers[index];
   if (!layer) throw new Error('레이어를 찾을 수 없습니다.');
   const { plates } = await printPipeline.exportPngs(printJobFromDoc(doc), [index]);
   const plate = plates[0];
@@ -43,7 +43,7 @@ export async function downloadLayerPng(index: number) {
 /** Compatibility JPEG: same mask on white. Edges can turn gray; the PNG is the print file. */
 export async function downloadLayerJpg(index: number) {
   const doc = currentDoc();
-  const layer = doc.layers[index];
+  const layer = activeFrame(doc).layers[index];
   if (!layer) throw new Error('레이어를 찾을 수 없습니다.');
   const { width, height, plates } = await printPipeline.exportPngs(printJobFromDoc(doc), [index]);
   const plate = plates[0];
@@ -55,11 +55,12 @@ export async function downloadLayerJpg(index: number) {
 /** One Photoshop layer per ink, transparent document, 300 PPI. */
 export async function downloadPsd() {
   const doc = currentDoc();
-  const indexes = doc.layers.map((_, i) => i);
+  const layers = activeFrame(doc).layers;
+  const indexes = layers.map((_, i) => i);
   const { width, height, plates } = await printPipeline.exportPngs(printJobFromDoc(doc), indexes);
   const children: Layer[] = [];
   for (const plate of plates) {
-    const layer = doc.layers[plate.index];
+    const layer = layers[plate.index];
     children.push({
       name: psdLayerName(plate.index, layer.name, layer.color),
       left: 0,
@@ -118,7 +119,8 @@ function pngBytes(png: Uint8Array): ArrayBuffer {
 /** Every plate plus a manifest of names, ink colours and screen settings. */
 export async function downloadZip() {
   const doc = currentDoc();
-  const indexes = doc.layers.map((_, i) => i);
+  const layers = activeFrame(doc).layers;
+  const indexes = layers.map((_, i) => i);
   const { plates } = await printPipeline.exportPngs(printJobFromDoc(doc), indexes);
   const inkArea = usePreview.getState().print?.inkArea ?? null;
   const manifest = buildManifest(doc, inkArea);
@@ -126,7 +128,7 @@ export async function downloadZip() {
     'manifest.json': strToU8(JSON.stringify(manifest, null, 2)),
   };
   for (const plate of plates) {
-    const layer = doc.layers[plate.index];
+    const layer = layers[plate.index];
     entries[layerFileName(plate.index, layer.name, layer.color)] = plate.bytes;
   }
   saveBytes(zipSync(entries, { level: 0 }), zipFileName(activeFrame(doc).source?.fileName), 'application/zip');

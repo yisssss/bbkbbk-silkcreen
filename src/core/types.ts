@@ -35,7 +35,7 @@ export interface LayerHalftone {
 export type HalftonePattern = 'ordered' | 'floyd-steinberg' | 'stochastic';
 export type DotShape = 'round';
 
-/** Shared by every layer; only the screen angle is per layer. */
+/** Shared by every layer of one picture; only the screen angle is per layer. */
 export interface HalftoneSettings {
   pattern: HalftonePattern;
   shape: DotShape;
@@ -95,12 +95,11 @@ export interface SeparationSettings {
 export type MockupKind = 'tshirt' | 'paper';
 
 export interface PreviewSettings {
-  paperColor: Hex;
-  /** Backdrop photo. Preview only; never enters the print masks. */
+  /** Backdrop photo. Preview only; never enters the print masks. Shared by every tab. */
   mockup: MockupKind;
 }
 
-/** One uploaded picture and the adjustments that belong only to it. */
+/** One uploaded picture, plus the print setup that belongs only to it. */
 export interface ImageFrame {
   id: string;
   /** Tab label. Usually the file name without its extension. */
@@ -111,6 +110,12 @@ export interface ImageFrame {
   placement: Placement;
   lockRatio: boolean;
   adjust: ImageAdjust;
+  artboard: Artboard;
+  separation: SeparationSettings;
+  halftone: HalftoneSettings;
+  layers: InkLayer[];
+  /** Mockup tint. Preview only; never enters the print masks. */
+  paperColor: Hex;
 }
 
 /** A swatch the user saved and can apply to an ink or the mockup. */
@@ -125,10 +130,6 @@ export interface ProjectDoc {
   /** Pictures, in tab order. There is always at least one. */
   images: ImageFrame[];
   activeImageId: string;
-  artboard: Artboard;
-  separation: SeparationSettings;
-  halftone: HalftoneSettings;
-  layers: InkLayer[];
   preview: PreviewSettings;
   /** Saved colours. Empty is allowed; missing means "use the defaults" on load. */
   palette: PaletteColor[];

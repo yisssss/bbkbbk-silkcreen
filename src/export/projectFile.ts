@@ -54,8 +54,9 @@ export function unpackProject(bytes: Uint8Array): UnpackedProject {
   }
   const raw = files[PROJECT_JSON];
   if (!raw) throw new Error('프로젝트 설정이 없는 파일입니다.');
-  const parsed = JSON.parse(strFromU8(raw)) as ProjectDoc;
-  if (parsed?.version !== 1 || !Array.isArray(parsed.layers) || !parsed.artboard) {
+  const parsed = JSON.parse(strFromU8(raw)) as ProjectDoc & { artboard?: unknown; images?: unknown };
+  const hasImages = Array.isArray(parsed?.images) && parsed.images.length > 0;
+  if (parsed?.version !== 1 || (!hasImages && !parsed.artboard)) {
     throw new Error('이 버전의 프로젝트 파일이 아닙니다.');
   }
   const doc = normalizeDoc(migrateSeparation(parsed));

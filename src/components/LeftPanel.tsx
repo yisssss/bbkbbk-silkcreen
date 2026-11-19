@@ -19,8 +19,7 @@ export function LeftPanel() {
   const requestCover = useUi((s) => s.requestCover);
 
   const image = activeFrame(doc);
-  const { artboard } = doc;
-  const { placement, crop, source, adjust, lockRatio } = image;
+  const { artboard, placement, crop, source, adjust, lockRatio, paperColor } = image;
   const palette = doc.palette;
   const printPx = printPixelSize(artboard.widthMm, artboard.heightMm);
   const dpi = crop ? Math.min(effectiveDpi(crop.width, placement.widthMm), effectiveDpi(crop.height, placement.heightMm)) : 0;
@@ -45,7 +44,7 @@ export function LeftPanel() {
               전체 초기화
             </button>
           </div>
-          <p className="note">「{image.name}」 탭만 바뀝니다. 판 크기와 인쇄 색은 모든 탭이 함께 씁니다.</p>
+          <p className="note">밝기, 출력 크기, 배경색은 「{image.name}」 탭에만 적용됩니다.</p>
           <SliderField
             label="밝기"
             value={adjust.brightness}
@@ -198,7 +197,7 @@ export function LeftPanel() {
           </div>
           <ColorField
             label={doc.preview.mockup === 'paper' ? '엽서 색' : '티셔츠 색'}
-            value={doc.preview.paperColor}
+            value={paperColor}
             palette={palette}
             onChange={actions.setPaperColor}
           />

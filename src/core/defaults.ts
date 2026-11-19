@@ -83,8 +83,21 @@ export function createDefaultPalette(): PaletteColor[] {
   return DEFAULT_PALETTE.map((swatch) => ({ id: newId(), name: swatch.name, color: swatch.color }));
 }
 
-/** An empty tab. The name is replaced when a file is loaded into it. */
-export function createFrame(index: number, artboard: Artboard): ImageFrame {
+function cloneLayers(layers: InkLayer[]): InkLayer[] {
+  return layers.map((layer) => ({
+    ...layer,
+    id: newId(),
+    tone: { ...layer.tone },
+    halftone: { ...layer.halftone },
+  }));
+}
+
+/**
+ * An empty tab. Pass another picture to start from a copy of its print setup
+ * (size, inks, halftone, background). The copy can then be edited on its own.
+ */
+export function createFrame(index: number, from?: ImageFrame): ImageFrame {
+  const artboard = from ? { ...from.artboard } : { ...DEFAULT_ARTBOARD };
   return {
     id: newId(),
     name: `이미지 ${index + 1}`,
@@ -93,6 +106,11 @@ export function createFrame(index: number, artboard: Artboard): ImageFrame {
     placement: fitPlacement(artboard, 3, 4),
     lockRatio: true,
     adjust: { ...DEFAULT_ADJUST },
+    artboard,
+    separation: from ? { ...from.separation } : { overprint: true, whitePoint: DEFAULT_WHITE_POINT },
+    halftone: from ? { ...from.halftone } : { ...DEFAULT_HALFTONE },
+    layers: from ? cloneLayers(from.layers) : [createLayer(0, 1)],
+    paperColor: from?.paperColor ?? '#FFFFFF',
   };
 }
 
@@ -163,16 +181,12 @@ export function fitPlacement(artboard: Artboard, imgW: number, imgH: number, fil
 }
 
 export function createEmptyDoc(): ProjectDoc {
-  const first = createFrame(0, DEFAULT_ARTBOARD);
+  const first = createFrame(0);
   return {
     version: 1,
     images: [first],
     activeImageId: first.id,
-    artboard: { ...DEFAULT_ARTBOARD },
-    separation: { overprint: true, whitePoint: DEFAULT_WHITE_POINT },
-    halftone: { ...DEFAULT_HALFTONE },
-    layers: [createLayer(0, 1)],
-    preview: { paperColor: '#FFFFFF', mockup: 'paper' },
+    preview: { mockup: 'paper' },
     palette: createDefaultPalette(),
   };
 }

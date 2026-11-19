@@ -1,4 +1,5 @@
-import type { ProjectDoc } from './types';
+import { activeFrame } from './defaults';
+import type { HalftoneSettings, ProjectDoc, SeparationSettings } from './types';
 import { PRINT_DPI, printPixelSize } from './units';
 
 const ILLEGAL = /[\\/:*?"<>|\u0000-\u001f]/g;
@@ -35,8 +36,8 @@ export interface ExportManifest {
   dpi: number;
   pixels: { width: number; height: number };
   artboardMm: { widthMm: number; heightMm: number };
-  separation: ProjectDoc['separation'];
-  halftone: ProjectDoc['halftone'];
+  separation: SeparationSettings;
+  halftone: HalftoneSettings;
   layers: {
     file: string;
     name: string;
@@ -48,14 +49,15 @@ export interface ExportManifest {
 
 /** Sidecar describing every plate. Ink colour lives here, never in the pixel values. */
 export function buildManifest(doc: ProjectDoc, inkArea: number[] | null): ExportManifest {
+  const image = activeFrame(doc);
   return {
     app: 'bbaekbbaek',
     dpi: PRINT_DPI,
-    pixels: printPixelSize(doc.artboard.widthMm, doc.artboard.heightMm),
-    artboardMm: { ...doc.artboard },
-    separation: doc.separation,
-    halftone: doc.halftone,
-    layers: doc.layers.map((l, i) => ({
+    pixels: printPixelSize(image.artboard.widthMm, image.artboard.heightMm),
+    artboardMm: { ...image.artboard },
+    separation: image.separation,
+    halftone: image.halftone,
+    layers: image.layers.map((l, i) => ({
       file: layerFileName(i, l.name, l.color),
       name: l.name,
       color: l.color,
