@@ -23,6 +23,7 @@ import type {
   PaletteColor,
   Placement,
   ProjectDoc,
+  QuarterTurn,
   Rect,
   SeparationSettings,
   SourceInfo,
@@ -52,6 +53,7 @@ interface LegacyDoc extends SharedPrint {
   crop?: Rect | null;
   placement?: Placement;
   lockRatio?: boolean;
+  rotation?: unknown;
   adjust?: ImageAdjust;
 }
 
@@ -180,6 +182,10 @@ function sanitizePaper(raw: unknown, fallback: string): string {
   return normalizeHex(typeof raw === 'string' ? raw : '') ?? fallback;
 }
 
+function sanitizeRotation(raw: unknown): QuarterTurn {
+  return raw === 90 || raw === 180 || raw === 270 ? raw : 0;
+}
+
 function sharedPrint(input: SharedPrint): PrintSetup {
   const separation = input.separation;
   return {
@@ -224,6 +230,7 @@ function sanitizeFrame(raw: unknown, index: number, shared: PrintSetup, usedIds:
     crop: sanitizeCrop(item.crop),
     placement: sanitizePlacement(item.placement, print.artboard),
     lockRatio: item.lockRatio !== false,
+    rotation: sanitizeRotation(item.rotation),
     adjust: sanitizeAdjust(item.adjust),
     ...print,
   };
@@ -240,6 +247,7 @@ function legacyFrame(legacy: LegacyDoc, shared: PrintSetup): ImageFrame {
     crop: sanitizeCrop(legacy.crop),
     placement: sanitizePlacement(legacy.placement, print.artboard),
     lockRatio: legacy.lockRatio !== false,
+    rotation: sanitizeRotation(legacy.rotation),
     adjust: sanitizeAdjust(legacy.adjust),
   };
 }

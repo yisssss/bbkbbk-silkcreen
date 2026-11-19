@@ -5,6 +5,7 @@ import type {
   ImageAdjust,
   LayerTone,
   Placement,
+  QuarterTurn,
   Rect,
   SeparationSettings,
 } from '../core/types';
@@ -29,6 +30,7 @@ export interface RenderRequest {
   crop: Rect | null;
   artboard: Artboard;
   placement: Placement;
+  rotation: QuarterTurn;
   /** Raster resolution for this render, in pixels per millimetre. */
   pxPerMm: number;
   layers: RenderLayer[];
@@ -76,6 +78,7 @@ export interface PrintJob {
   crop: Rect | null;
   artboard: Artboard;
   placement: Placement;
+  rotation: QuarterTurn;
   layers: { id: string; tone: LayerTone; angleDeg: number }[];
   adjust: ImageAdjust;
   separation: SeparationSettings;

@@ -24,6 +24,7 @@ function buildDraftRequest(): RenderRequest {
     crop: image.crop,
     artboard: image.artboard,
     placement: image.placement,
+    rotation: image.rotation,
     pxPerMm: Math.min(PREVIEW_LONG_SIDE / longMm, mmToPx(1)),
     layers: image.layers.map((l) => ({ id: l.id, color: l.color, tone: l.tone, visible: l.visible })),
     adjust: image.adjust,

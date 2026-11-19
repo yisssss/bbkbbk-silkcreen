@@ -17,6 +17,7 @@ function getBase(req: RenderRequest): BaseRaster {
     imageId: req.imageId,
     crop: req.crop,
     placement: req.placement,
+    rotation: req.rotation,
     width: Math.max(1, Math.round(req.artboard.widthMm * req.pxPerMm)),
     height: Math.max(1, Math.round(req.artboard.heightMm * req.pxPerMm)),
     pxPerMm: req.pxPerMm,

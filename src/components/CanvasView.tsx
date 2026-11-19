@@ -16,6 +16,7 @@ import {
 } from '../core/geometry';
 import type { Placement, Rect } from '../core/types';
 import { MOCKUP_SRC, mockupFrame, type MockupPhoto } from '../core/mockup';
+import { orientedSize, paintOriented } from '../core/orient';
 import { clamp, mmToPx, mmToUnit } from '../core/units';
 import { useDocument } from '../state/documentStore';
 import { imageRegistry } from '../state/imageRegistry';
@@ -182,11 +183,12 @@ export function CanvasView() {
 
     if (ui.tool === 'crop') {
       const frame = cropFrameOf(image.crop, image.placement);
+      const oriented = orientedSize(image.source.width, image.source.height, image.rotation);
       const full = toScreen({
         x: frame.originX,
         y: frame.originY,
-        width: image.source.width * frame.scale,
-        height: image.source.height * frame.scale,
+        width: oriented.width * frame.scale,
+        height: oriented.height * frame.scale,
       });
       const entry = imageRegistry.get(image.source.imageId);
       ctx.save();
@@ -195,7 +197,7 @@ export function CanvasView() {
       ctx.rect(pr.x, pr.y, pr.width, pr.height);
       ctx.clip('evenodd');
       ctx.globalAlpha = 0.35;
-      if (entry) ctx.drawImage(entry.bitmap, full.x, full.y, full.width, full.height);
+      if (entry) paintOriented(ctx, entry.bitmap, image.rotation, full);
       ctx.globalAlpha = 1;
       ctx.fillStyle = 'rgba(0,0,0,.35)';
       ctx.fillRect(full.x, full.y, full.width, full.height);
@@ -384,6 +386,10 @@ export function CanvasView() {
       } else if (!mod && e.key.toLowerCase() === 'v') ui.set({ tool: 'move' });
       else if (!mod && e.key.toLowerCase() === 'c' && hasImage) ui.set({ tool: 'crop' });
       else if (!mod && e.key.toLowerCase() === 'h') ui.set({ tool: 'hand' });
+      else if (!mod && e.key.toLowerCase() === 'r' && hasImage) {
+        e.preventDefault();
+        useDocument.getState().rotateImage(!e.shiftKey);
+      }
       else if ((e.key === 'Enter' || e.key === 'Escape') && ui.tool === 'crop') ui.set({ tool: 'move' });
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -489,7 +495,7 @@ export function CanvasView() {
       case 'crop-move':
       case 'crop-resize': {
         if (!image.source) break;
-        const { width: sw, height: sh } = image.source;
+        const { width: sw, height: sh } = orientedSize(image.source.width, image.source.height, image.rotation);
         const dxPx = dx / drag.frame.scale;
         const dyPx = dy / drag.frame.scale;
         const crop =

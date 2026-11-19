@@ -10,6 +10,7 @@ export function printJobFromDoc(doc: ProjectDoc): PrintJob {
     crop: image.crop,
     artboard: image.artboard,
     placement: image.placement,
+    rotation: image.rotation,
     layers: image.layers.map((l) => ({ id: l.id, tone: l.tone, angleDeg: l.halftone.angleDeg })),
     adjust: image.adjust,
     separation: image.separation,

@@ -32,6 +32,7 @@ function ensureBase(job: PrintJob): BaseRaster {
     imageId: job.imageId,
     crop: job.crop,
     placement: job.placement,
+    rotation: job.rotation,
     width,
     height,
     pxPerMm: mmToPx(1),

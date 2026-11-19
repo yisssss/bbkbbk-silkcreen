@@ -1,4 +1,6 @@
 export type Hex = string;
+/** Clockwise quarter turns of one picture. The stored file itself stays untouched. */
+export type QuarterTurn = 0 | 90 | 180 | 270;
 export type RGB = [number, number, number];
 
 export type LengthUnit = 'mm' | 'cm';
@@ -109,6 +111,8 @@ export interface ImageFrame {
   crop: Rect | null;
   placement: Placement;
   lockRatio: boolean;
+  /** Clockwise. Crop and placement are stored in this orientation. */
+  rotation: QuarterTurn;
   adjust: ImageAdjust;
   artboard: Artboard;
   separation: SeparationSettings;

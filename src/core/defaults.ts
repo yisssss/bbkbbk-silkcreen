@@ -105,6 +105,7 @@ export function createFrame(index: number, from?: ImageFrame): ImageFrame {
     crop: null,
     placement: fitPlacement(artboard, 3, 4),
     lockRatio: true,
+    rotation: 0,
     adjust: { ...DEFAULT_ADJUST },
     artboard,
     separation: from ? { ...from.separation } : { overprint: true, whitePoint: DEFAULT_WHITE_POINT },

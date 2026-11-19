@@ -17,6 +17,7 @@ import {
   relayoutLayers,
 } from '../core/defaults';
 import { normalizeDoc } from '../core/normalizeDoc';
+import { nextQuarter, orientedSize, turnCrop, turnPlacement } from '../core/orient';
 import { migrateSeparation } from '../core/separation';
 import type {
   Artboard,
@@ -77,6 +78,7 @@ interface DocumentState {
   setPlacement(patch: Partial<Placement>): void;
   setLockRatio(lock: boolean): void;
   setCrop(crop: Rect, placement: Placement): void;
+  rotateImage(clockwise: boolean): void;
   resetCrop(): void;
   fitImage(): void;
   centerImage(): void;
@@ -115,6 +117,7 @@ function withSource(img: ImageFrame, loaded: LoadedFile): ImageFrame {
     },
     crop: { x: 0, y: 0, width: meta.width, height: meta.height },
     placement: fitPlacement(img.artboard, meta.width, meta.height),
+    rotation: 0,
   };
 }
 
@@ -330,6 +333,7 @@ export const useDocument = create<DocumentState>((set, get) => {
         ...img,
         source: null,
         crop: null,
+        rotation: 0,
         placement: fitPlacement(img.artboard, 3, 4),
       }));
       leaveCropIfEmpty(get().doc);
@@ -430,10 +434,23 @@ export const useDocument = create<DocumentState>((set, get) => {
       patchActive((img) => ({ ...img, crop, placement }));
     },
 
+    rotateImage(clockwise) {
+      patchActive((img) => {
+        if (!img.source || !img.crop) return img;
+        const size = orientedSize(img.source.width, img.source.height, img.rotation);
+        return {
+          ...img,
+          rotation: nextQuarter(img.rotation, clockwise),
+          crop: turnCrop(img.crop, size.width, size.height, clockwise),
+          placement: turnPlacement(img.placement),
+        };
+      });
+    },
+
     resetCrop() {
       patchActive((img) => {
         if (!img.source || !img.crop) return img;
-        const { width, height } = img.source;
+        const { width, height } = orientedSize(img.source.width, img.source.height, img.rotation);
         const scale = img.placement.widthMm / img.crop.width;
         const originX = img.placement.xMm - img.crop.x * scale;
         const originY = img.placement.yMm - img.crop.y * scale;

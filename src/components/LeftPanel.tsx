@@ -142,6 +142,24 @@ export function LeftPanel() {
             </button>
           </div>
           <div className="btn-row">
+            <button
+              className="btn"
+              disabled={!source}
+              title="시계 반대 방향으로 90° (Shift+R)"
+              onClick={() => actions.rotateImage(false)}
+            >
+              ↺ 왼쪽
+            </button>
+            <button
+              className="btn"
+              disabled={!source}
+              title="시계 방향으로 90° (R)"
+              onClick={() => actions.rotateImage(true)}
+            >
+              오른쪽 ↻
+            </button>
+          </div>
+          <div className="btn-row">
             <button className="btn" disabled={!source} onClick={() => setUi({ tool: 'crop' })}>
               크롭 편집
             </button>
@@ -158,6 +176,7 @@ export function LeftPanel() {
               <dt>원본</dt>
               <dd>
                 {source.width} × {source.height}px{source.hasAlpha ? ' · 투명 배경' : ''}
+                {image.rotation ? ` · ${image.rotation}°` : ''}
               </dd>
               <dt>크롭</dt>
               <dd>
